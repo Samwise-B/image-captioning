@@ -12,7 +12,7 @@ from tqdm import tqdm
 repo_dir = Path(__file__).parent.parent
 sys.path.append(str(repo_dir))
 
-from models.seq import BERT, MultiHeadTransformer
+from models.decoder import BERT, MultiHeadTransformer
 from utils.param_counter import count_parameters
 
 text = "AABBCC" * 10
