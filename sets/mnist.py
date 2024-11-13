@@ -10,6 +10,9 @@ class Combine(torch.utils.data.Dataset):
         self.window_size = window_size
         self.tf = torchvision.transforms.ToTensor()
         self.ds = torchvision.datasets.MNIST(root=".", download=True)
+        self.tokeniser = {"<s>": 10, "</s>": 11}
+        for token in range(10):
+            self.tokeniser[token] = token + 2
         self.ln = len(self.ds)
 
     def __len__(self):
@@ -31,7 +34,22 @@ class Combine(torch.utils.data.Dataset):
         img.paste(store[2], (0, 28))
         img.paste(store[3], (28, 28))
         patches = self.get_patches(img)
-        return patches, label
+        enc_label = self.encode_label(label)
+        return patches, enc_label[0][:-1].unsqueeze(0), enc_label[0][1:].unsqueeze(0)
+
+    def collate_fn(batch):
+        patches, tokens, targets = zip(*batch)
+        # Concatenate images and labels
+        images = torch.cat(patches, dim=0)
+        inpts = torch.cat(tokens, dim=0)
+        targets = torch.cat(targets, dim=0)
+
+        return images, inpts, targets
+
+    def encode_label(self, label):
+        return torch.tensor(
+            [[self.tokeniser["<s>"]] + label + [self.tokeniser["</s>"]]]
+        )
 
     def get_patches(self, img):
 
@@ -57,5 +75,5 @@ class Combine(torch.utils.data.Dataset):
 
 if __name__ == "__main__":
     ds = Combine()
-    img, label = ds[0]
+    img, label, target = ds[0]
     print(label)

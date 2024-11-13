@@ -2,7 +2,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from positional import PositionalEncoding
+import sys
+from pathlib import Path
+
+repo_dir = Path(__file__).parent.parent
+sys.path.append(str(repo_dir))
+
+from models.positional import PositionalEncoding
 
 
 class Decoder(nn.Module):
@@ -118,7 +124,7 @@ class CrossAttentionBlock(nn.Module):
         self.add_norm = add_norm
         self.M_q = nn.Linear(word_emb_dim, self.word_emb_dim)
         self.M_k = nn.Linear(img_emb_dim, self.word_emb_dim)
-        self.M_v = nn.Linear(word_emb_dim, self.word_emb_dim)
+        self.M_v = nn.Linear(img_emb_dim, self.word_emb_dim)
         self.attn_dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(word_emb_dim)
 
@@ -135,7 +141,7 @@ class CrossAttentionBlock(nn.Module):
         A = F.softmax(A, dim=-1)
         # [batch_size, seq_len, seq_len]
 
-        V = self.M_v(word_emb)
+        V = self.M_v(img_emb)
         # [batch_size, seq_len, word_emb_dim]
 
         attn_emb = A @ V

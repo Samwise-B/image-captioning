@@ -1,7 +1,13 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
-from positional import PositionalEncoding
+import sys
+from pathlib import Path
+
+repo_dir = Path(__file__).parent.parent
+sys.path.append(str(repo_dir))
+
+from models.positional import PositionalEncoding
 
 
 class Encoder(nn.Module):
@@ -9,13 +15,13 @@ class Encoder(nn.Module):
         self,
         embed_dim: int,
         patch_size: int,
+        num_patches: int,
         num_layers: int,
         ff_dim: int,
     ):
         super().__init__()
 
         self.embedding = nn.Linear(patch_size, embed_dim)
-        num_patches = self.embedding.shape[1]
         self.embed_pos = PositionalEncoding(embed_dim, num_patches)
         self.attn_block = nn.ModuleList(
             [EncoderAttentionBlock(embed_dim, ff_dim) for _ in range(num_layers)]
