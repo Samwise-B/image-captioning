@@ -17,6 +17,7 @@ class Encoder(nn.Module):
         patch_size: int,
         num_patches: int,
         num_layers: int,
+        num_heads: int,
         ff_dim: int,
     ):
         super().__init__()
@@ -24,7 +25,10 @@ class Encoder(nn.Module):
         self.embedding = nn.Linear(patch_size, embed_dim)
         self.embed_pos = PositionalEncoding(embed_dim, num_patches)
         self.attn_block = nn.ModuleList(
-            [EncoderAttentionBlock(embed_dim, ff_dim) for _ in range(num_layers)]
+            [
+                EncoderAttentionBlock(embed_dim, ff_dim, num_heads)
+                for _ in range(num_layers)
+            ]
         )
 
     def forward(self, tokens: torch.LongTensor):
@@ -43,6 +47,7 @@ class EncoderAttentionBlock(nn.Module):
         self,
         embedding_dim: int,
         ff_dim: int,
+        num_heads: int,
         dropout: float = 0.1,
         add_norm: bool = True,
     ):
@@ -50,9 +55,14 @@ class EncoderAttentionBlock(nn.Module):
         self.embed_dim = embedding_dim
         self.scaling_fac = self.embed_dim ** (1 / 2)
         self.add_norm = add_norm
-        self.M_q = nn.Linear(embedding_dim, embedding_dim)
-        self.M_k = nn.Linear(embedding_dim, embedding_dim)
-        self.M_v = nn.Linear(embedding_dim, embedding_dim)
+        # self.M_q = nn.Linear(embedding_dim, embedding_dim)
+        # self.M_k = nn.Linear(embedding_dim, embedding_dim)
+        # self.M_v = nn.Linear(embedding_dim, embedding_dim)
+        assert embedding_dim % num_heads == 0
+        self.head_dim = int(embedding_dim // num_heads)
+        self.num_heads = int(num_heads)
+        self.qkv_combined = nn.Linear(embedding_dim, embedding_dim * 3)
+        self.concat_proj = nn.Linear(embedding_dim, embedding_dim)
         self.attn_dropout = nn.Dropout(dropout)
         self.ff = nn.Sequential(
             nn.Linear(embedding_dim, ff_dim),
@@ -64,24 +74,27 @@ class EncoderAttentionBlock(nn.Module):
         self.norm = nn.LayerNorm(embedding_dim)
 
     def forward(self, word_emb: torch.Tensor):
-        # Embeddings: [seq_len, embedding_dim]
-        Q = self.M_q(word_emb)
+        batch_size, seq_len, _ = word_emb.size()
+        qkv = self.qkv_combined(word_emb)
+        qkv = qkv.view(batch_size, seq_len, 3, self.num_heads, self.head_dim)
+        qkv = qkv.permute(0, 2, 3, 1, 4)
+        Qs, Ks, Vs = qkv.unbind(dim=1)
 
-        # [seq_len, embedding_dim]
-        K = self.M_k(word_emb)
+        # [batch_size, num_heads, seq_len, seq_len]
+        As = (Qs @ Ks.transpose(-1, -2)) / self.scaling_fac
 
-        # [seq_len, seq_len]
-        attn = (Q @ K.transpose(-1, -2)) / self.scaling_fac
+        # [batch_size, num_heads, seq_len, seq_len]
+        As = F.softmax(As, dim=-1)
 
-        # [batch_size, seq_len, seq_len]
-        A = F.softmax(attn, dim=-1)
+        # [batch_size, num_heads, seq_len, head_dim]
+        attn_emb = As @ Vs
 
-        # [batch_size, seq_len, emb_dim]
-        V = self.M_v(word_emb)
+        attn_emb = attn_emb.view(batch_size, seq_len, self.embed_dim)
+        # batch_size, seq_len, embed_dim
 
-        # [batch_size, seq_len, embedding_dim]
-        attn_emb = A @ V
+        attn_emb = self.concat_proj(attn_emb)
 
+        # batch_size, seq_len, embed_dim
         attn_emb = self.attn_dropout(attn_emb)
 
         if self.add_norm:

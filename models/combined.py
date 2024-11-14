@@ -20,6 +20,8 @@ class DoubleTrouble(torch.nn.Module):
         context_size: int,
         num_patches: int,
         num_layers_encoder: int,
+        num_heads_encoder: int,
+        num_heads_decoder: int,
         ff_dim_encoder: int,
         dropout: int = 0.1,
     ):
@@ -29,10 +31,16 @@ class DoubleTrouble(torch.nn.Module):
             patch_size,
             num_patches=num_patches,
             num_layers=num_layers_encoder,
+            num_heads=num_heads_encoder,
             ff_dim=ff_dim_encoder,
         )
         self.decoder = Decoder(
-            vocab_size, word_embed_dim, img_embed_dim, ff_dim_decoder, context_size
+            vocab_size,
+            word_embed_dim,
+            img_embed_dim,
+            num_heads_decoder,
+            ff_dim_decoder,
+            context_size,
         )
 
     def forward(self, tokens, patches):

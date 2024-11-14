@@ -17,6 +17,7 @@ class Decoder(nn.Module):
         vocab_size: int,
         word_embed_dim: int,
         img_embed_dim: int,
+        num_heads: int,
         ff_dim: int,
         context_size: int,
         dropout: int = 0.1,
@@ -26,8 +27,8 @@ class Decoder(nn.Module):
         self.embed_pos = PositionalEncoding(word_embed_dim, context_size)
         self.context_size = context_size
         # Must return tensor of the same shape
-        self.masked_attn = MaskedAttentionBlock(embedding_dim=word_embed_dim)
-        self.cross_attn = CrossAttentionBlock(word_embed_dim, img_embed_dim)
+        self.masked_attn = MaskedAttentionBlock(word_embed_dim, num_heads)
+        self.cross_attn = CrossAttentionBlock(word_embed_dim, img_embed_dim, num_heads)
         self.ff = nn.Sequential(
             nn.Linear(word_embed_dim, ff_dim),
             nn.ReLU(),
@@ -60,6 +61,7 @@ class MaskedAttentionBlock(nn.Module):
     def __init__(
         self,
         embedding_dim: int,
+        num_heads: int,
         dropout: float = 0.1,
         add_norm: bool = True,
     ):
@@ -67,21 +69,26 @@ class MaskedAttentionBlock(nn.Module):
         self.embed_dim = embedding_dim
         self.scaling_fac = self.embed_dim ** (1 / 2)
         self.add_norm = add_norm
-        self.M_q = nn.Linear(embedding_dim, embedding_dim)
-        self.M_k = nn.Linear(embedding_dim, embedding_dim)
-        self.M_v = nn.Linear(embedding_dim, embedding_dim)
+
+        assert embedding_dim % num_heads == 0
+        self.num_heads = int(num_heads)
+        self.head_dim = int(embedding_dim // num_heads)
+        self.qkv_combined = nn.Linear(embedding_dim, embedding_dim * 3)
+        self.concat_proj = nn.Linear(embedding_dim, embedding_dim)
         self.attn_dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(embedding_dim)
 
     def forward(self, word_emb: torch.Tensor):
-        # Embeddings: [seq_len, embedding_dim]
-        Q = self.M_q(word_emb)
 
-        # [seq_len, embedding_dim]
-        K = self.M_k(word_emb)
+        batch_size, seq_len, _ = word_emb.size()
+
+        qkv = self.qkv_combined(word_emb)
+        qkv = qkv.view(batch_size, seq_len, 3, self.num_heads, self.head_dim)
+        qkv = qkv.permute(0, 2, 3, 1, 4)
+        Qs, Ks, Vs = qkv.unbind(dim=1)
 
         # [seq_len, seq_len]
-        attn = (Q @ K.transpose(-1, -2)) / self.scaling_fac
+        attn = (Qs @ Ks.transpose(-1, -2)) / self.scaling_fac
 
         # seq_len = attn.shape[1]
 
@@ -91,13 +98,13 @@ class MaskedAttentionBlock(nn.Module):
         masked_attn = attn + mask
 
         # [batch_size, seq_len, seq_len]
-        A = F.softmax(masked_attn, dim=-1)
-
-        # [batch_size, seq_len, emb_dim]
-        V = self.M_v(word_emb)
+        As = F.softmax(masked_attn, dim=-1)
 
         # [batch_size, seq_len, embedding_dim]
-        attn_emb = A @ V
+        attn_emb = As @ Vs
+
+        attn_emb = attn_emb.view(batch_size, seq_len, self.embed_dim)
+        attn_emb = self.concat_proj(attn_emb)
 
         attn_emb = self.attn_dropout(attn_emb)
 
@@ -113,6 +120,7 @@ class CrossAttentionBlock(nn.Module):
         self,
         word_emb_dim: int,
         img_emb_dim: int,
+        num_heads: int,
         dropout: float = 0.1,
         add_norm: bool = True,
     ):
@@ -122,6 +130,14 @@ class CrossAttentionBlock(nn.Module):
         # self.combined_dim = min(word_emb_dim, img_emb_dim)
         self.scaling_fac = self.word_emb_dim ** (1 / 2)
         self.add_norm = add_norm
+
+        assert word_emb_dim % num_heads == 0
+        assert img_emb_dim % num_heads == 0
+        self.word_head_dim = int(word_emb_dim // num_heads)
+        self.img_head_dim = int(img_emb_dim // num_heads)
+        self.num_heads = int(num_heads)
+
+        self.concat_proj = nn.Linear(word_emb_dim, word_emb_dim)
         self.M_q = nn.Linear(word_emb_dim, self.word_emb_dim)
         self.M_k = nn.Linear(img_emb_dim, self.word_emb_dim)
         self.M_v = nn.Linear(img_emb_dim, self.word_emb_dim)
@@ -129,23 +145,38 @@ class CrossAttentionBlock(nn.Module):
         self.norm = nn.LayerNorm(word_emb_dim)
 
     def forward(self, word_emb: torch.Tensor, img_emb: torch.Tensor):
-        Q = self.M_q(word_emb)
-        # [batch_size, seq_len, word_emb_dim]
+        batch_size, seq_len, _ = word_emb.size()
+        _, num_patches, _ = img_emb.size()
 
-        K = self.M_k(img_emb)
-        # [batch_size, seq_len, img_emb_dim]
+        Qs = self.M_q(word_emb).view(
+            batch_size, seq_len, self.num_heads, self.word_head_dim
+        )
+        Qs = Qs.permute(0, 2, 1, 3)
+        # [batch_size, seq_len, num_heads, word_head_dim]
 
-        A = (Q @ K.transpose(-1, -2)) / self.scaling_fac
+        Ks = self.M_k(img_emb).view(
+            batch_size, num_patches, self.num_heads, self.img_head_dim
+        )
+        Ks = Ks.permute(0, 2, 1, 3)
+        # [batch_size, seq_len, num_heads, img_head_dim]
+
+        As = (Qs @ Ks.transpose(-1, -2)) / self.scaling_fac
         # [batch_size, seq_len, seq_len]
 
-        A = F.softmax(A, dim=-1)
+        As = F.softmax(As, dim=-1)
         # [batch_size, seq_len, seq_len]
 
-        V = self.M_v(img_emb)
-        # [batch_size, seq_len, word_emb_dim]
+        Vs = self.M_v(img_emb).view(
+            batch_size, num_patches, self.num_heads, self.img_head_dim
+        )
+        Vs = Vs.permute(0, 2, 1, 3)
+        # [batch_size, seq_len, num_heads, img_head_dim]
 
-        attn_emb = A @ V
+        attn_emb = As @ Vs
         # [batch_size, seq_len, embedding_dim]
+
+        attn_emb = attn_emb.view(batch_size, seq_len, self.word_emb_dim)
+        attn_emb = self.concat_proj(attn_emb)
 
         attn_emb = self.attn_dropout(attn_emb)
 

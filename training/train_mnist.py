@@ -26,13 +26,15 @@ model = DoubleTrouble(
     context_size=6,
     num_patches=16,
     num_layers_encoder=1,
+    num_heads_encoder=256 / 8,
+    num_heads_decoder=256 / 8,
     ff_dim_encoder=4 * 256,
 )
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
 criterion = torch.nn.CrossEntropyLoss()
 
-wandb.init(project="encoder-decoder", name="mnist-single-head")
+wandb.init(project="encoder-decoder", name="mnist-multi-head")
 running_loss = []
 running_accuracy = []
 for _ in range(5):
