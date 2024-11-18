@@ -66,18 +66,23 @@ class Flickr(torch.utils.data.Dataset):
         patches, tokens, targets = zip(*batch)
         cap_lens = [len(string) for string in tokens]
         padded_inpts = torch.nn.utils.rnn.pad_sequence(
-            tokens, batch_first=True, padding_value=0, padding_side="right"
+            tokens, batch_first=True, padding_value=0
         )
-        padded_targets = torch.nn.utils.rnn.pad_sequence(
-            targets, batch_first=True, padding_value=0, padding_side="right"
-        )
+        # padded_targets = torch.nn.utils.rnn.pad_sequence(
+        #     targets, batch_first=True, padding_value=0
+        # )
         # Concatenate images and labels
+        targets = torch.cat(targets, dim=0)
         images = torch.cat(patches, dim=0)
 
-        return images, padded_inpts, padded_targets, cap_lens
+        return images, padded_inpts, targets, cap_lens
 
     def encode_label(self, label):
-        return torch.LongTensor(self.tokeniser.encode("<s>" + label + "</s>"))
+        return torch.LongTensor(
+            [self.tokeniser.bos_id()]
+            + self.tokeniser.encode(label)
+            + [self.tokeniser.eos_id()]
+        )
 
     def get_patches(self, img: torch.Tensor):
         img = img.unsqueeze(0)

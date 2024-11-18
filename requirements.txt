@@ -1,0 +1,6 @@
+wandb
+tqdm
+torch
+torchvision
+datasets
+sentencepiece

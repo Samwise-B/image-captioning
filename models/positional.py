@@ -1,6 +1,8 @@
 import torch
 import math
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 class PositionalEncoding(torch.nn.Module):
     def __init__(self, d_model, max_len=5000):
@@ -18,7 +20,7 @@ class PositionalEncoding(torch.nn.Module):
         pe[:, 1::2] = torch.cos(position * div_term)
 
         # Add an extra dimension for batch compatibility
-        pe = pe.unsqueeze(0)
+        pe = pe.unsqueeze(0).to(device)
         self.register_buffer("pe", pe)
 
     def forward(self, x):

@@ -2,6 +2,7 @@ MNIST/
 FLICKR/
 wandb/
 utils/tokenizer.*
+ssh-key
 
 
 # Byte-compiled / optimized / DLL files

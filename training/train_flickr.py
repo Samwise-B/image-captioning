@@ -28,19 +28,24 @@ train_loader = DataLoader(
     train_dataset, batch_size=2, shuffle=True, collate_fn=Flickr.collate_fn
 )
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Available device is {device}")
+
 model = DoubleTrouble(
     vocab_size=train_dataset.vocab_size,
     patch_size=16**2,
-    word_embed_dim=train_dataset.vocab_size // 2 + 1,
-    img_embed_dim=(16**2) // 4,
-    ff_dim_decoder=2 * (train_dataset.vocab_size // 2),
+    word_embed_dim=train_dataset.vocab_size // 8 + 1,
+    img_embed_dim=(16**2) // 8,
+    ff_dim_decoder=2 * (train_dataset.vocab_size // 8),
     num_patches=768,
     num_layers_encoder=1,
     num_layers_decoder=1,
     num_heads_encoder=1,
     num_heads_decoder=1,
-    ff_dim_encoder=2 * (train_dataset.vocab_size // 2),
+    ff_dim_encoder=2 * (train_dataset.vocab_size // 8),
 )
+
+model.to(device)
 
 print(
     f"Number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}"
@@ -52,15 +57,18 @@ criterion = torch.nn.CrossEntropyLoss()
 wandb.init(project="encoder-decoder", name="flickr-multi-head")
 running_loss = []
 running_accuracy = []
-for _ in range(5):
+for _ in range(1000):
     for i, (patches, tokens, target, cap_lens) in enumerate(
         tqdm(train_loader, desc="Training")
     ):
+        patches = patches.to(device)
+        tokens = tokens.to(device)
+        target = target.to(device)
+
         optimizer.zero_grad()
         pred = model(tokens, patches)
-        for i, x in enumerate(pred):
-            x = x[: cap_lens[i]]
-        # pred = [ for x in pred]
+        pred = torch.cat([x[: cap_lens[i]] for i, x in enumerate(pred)], dim=0)
+
         loss = criterion(pred.view(-1, pred.size(-1)), target.view(-1))
         loss.backward()
         optimizer.step()
@@ -75,14 +83,14 @@ for _ in range(5):
         accuracy = correct / total * 100
         running_accuracy.append(accuracy)
 
-        if (i + 1) % 100 == 0:
-            # print("", end="\r")
-            # print(f"loss: {sum(running_loss) / 100}", end="\r")
-            wandb.log(
-                {
-                    "loss-100": sum(running_loss) / 100,
-                    "accuracy-100": sum(running_accuracy) / 100,
-                }
-            )
-            running_loss = []
-            running_accuracy = []
+        # print("", end="\r")
+        # print(f"loss: {sum(running_loss) / 100}", end="\r")
+        # if (i+1) % 100 == 0:
+        wandb.log(
+            {
+                "loss-100": sum(running_loss) / 100,
+                "accuracy-100": sum(running_accuracy) / 100,
+            }
+        )
+        running_loss = []
+        running_accuracy = []
