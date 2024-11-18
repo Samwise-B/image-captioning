@@ -20,13 +20,11 @@ class Decoder(nn.Module):
         num_heads: int,
         num_layers: int,
         ff_dim: int,
-        context_size: int,
         dropout: int = 0.1,
     ):
         super().__init__()
 
         self.word_emb_dim = word_embed_dim
-        self.context_size = context_size
         # Must return tensor of the same shape
         self.attn_layers = nn.ModuleList(
             DecoderAttentionBlock(

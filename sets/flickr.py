@@ -15,7 +15,9 @@ path_to_tokeniser = Path(__file__).parent.parent / "utils/tokenizer.model"
 
 
 class Flickr(torch.utils.data.Dataset):
-    def __init__(self, split: str, window_size: int = 16, transform=None):
+    def __init__(
+        self, split: str, num_rows: int, window_size: int = 16, transform=None
+    ):
         super().__init__()
         self.window_size = window_size
         self.ds = load_dataset("nlphuji/flickr30k")
@@ -34,7 +36,10 @@ class Flickr(torch.utils.data.Dataset):
             with open(path_to_split_ind, "wb") as f:
                 pickle.dump(split_to_indices, f)
 
-        self.split_indices = split_to_indices[split]
+        if num_rows != -1:
+            self.split_indices = split_to_indices[split][:num_rows]
+        else:
+            self.split_indices = split_to_indices[split]
         self.transform = transform
 
     def __len__(self):
@@ -50,11 +55,11 @@ class Flickr(torch.utils.data.Dataset):
         patches = self.get_patches(img)
         caption_tokens = self.encode_label(caption)
         targ = caption_tokens[1:]
-        inpt = caption_tokens[:-1]
+        inpt = caption_tokens[:-1].clone().detach()
         return (
             patches,
-            torch.tensor(inpt),
-            torch.tensor(targ),
+            inpt,
+            targ,
         )
 
     def collate_fn(batch):
