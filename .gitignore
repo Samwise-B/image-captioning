@@ -1,5 +1,7 @@
 MNIST/
+FLICKR/
 wandb/
+utils/tokenizer.*
 
 
 # Byte-compiled / optimized / DLL files

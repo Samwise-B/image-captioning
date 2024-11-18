@@ -5,11 +5,11 @@ import PIL
 
 
 class Combine(torch.utils.data.Dataset):
-    def __init__(self, window_size: int = 14):
+    def __init__(self, ds, window_size: int = 14):
         super().__init__()
         self.window_size = window_size
         self.tf = torchvision.transforms.ToTensor()
-        self.ds = torchvision.datasets.MNIST(root=".", download=True)
+        self.ds = ds
         self.tokeniser = {"<s>": 10, "</s>": 11}
         for token in range(10):
             self.tokeniser[token] = token + 2
@@ -19,7 +19,7 @@ class Combine(torch.utils.data.Dataset):
         return len(self.ds)
 
     def __getitem__(self, idx):
-        idx = random.sample(range(self.ln), 4)
+        idx = random.sample(range(self.__len__()), 4)
         store = []
         label = []
 

@@ -18,43 +18,72 @@ class Decoder(nn.Module):
         word_embed_dim: int,
         img_embed_dim: int,
         num_heads: int,
+        num_layers: int,
         ff_dim: int,
         context_size: int,
         dropout: int = 0.1,
     ):
         super().__init__()
 
-        self.embed_pos = PositionalEncoding(word_embed_dim, context_size)
+        self.word_emb_dim = word_embed_dim
         self.context_size = context_size
         # Must return tensor of the same shape
-        self.masked_attn = MaskedAttentionBlock(word_embed_dim, num_heads)
-        self.cross_attn = CrossAttentionBlock(word_embed_dim, img_embed_dim, num_heads)
-        self.ff = nn.Sequential(
-            nn.Linear(word_embed_dim, ff_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(ff_dim, word_embed_dim),
-            nn.Dropout(dropout),
+        self.attn_layers = nn.ModuleList(
+            DecoderAttentionBlock(
+                word_embed_dim, img_embed_dim, num_heads, ff_dim, dropout
+            )
+            for _ in range(num_layers)
         )
 
         self.embedding = nn.Embedding(vocab_size, word_embed_dim)
         self.projection = nn.Linear(word_embed_dim, vocab_size)
 
     def forward(self, tokens: torch.LongTensor, img_emb: torch.Tensor):
+        self.embed_pos = PositionalEncoding(self.word_emb_dim, tokens.size(1))
         # tokens: [batch_size, seq_len]
         word_emb = self.embedding(tokens)
         word_emb = self.embed_pos(word_emb)
         # [batch_size, seq_len, embedding_dim]
 
-        word_emb = self.masked_attn(word_emb)
         # [batch_size, seq_len, embedding_dim]
-
-        combined_embeddings = self.cross_attn(word_emb, img_emb)
+        for layer in self.attn_layers:
+            word_emb = layer((word_emb, img_emb))
 
         # [seq_len, vocab_size]
-        projected = self.projection(combined_embeddings)
+        projected = self.projection(word_emb)
 
         return projected
+
+
+class DecoderAttentionBlock(nn.Module):
+    def __init__(
+        self,
+        word_embed_dim: int,
+        img_embed_dim: int,
+        num_heads: int,
+        ff_dim: int,
+        dropout: int = 0.1,
+    ):
+        super().__init__()
+        # self.combined_dim = max(word_embed_dim, img_embed_dim)
+        self.combined_dim = word_embed_dim
+        self.masked_attn = MaskedAttentionBlock(word_embed_dim, num_heads)
+        self.cross_attn = CrossAttentionBlock(word_embed_dim, img_embed_dim, num_heads)
+        self.ff = nn.Sequential(
+            nn.Linear(self.combined_dim, ff_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(ff_dim, word_embed_dim),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x: tuple[torch.Tensor]):
+        word_emb, img_emb = x
+
+        word_emb = self.masked_attn(word_emb)
+        combined_embeddings = self.cross_attn(word_emb, img_emb)
+
+        return self.ff(combined_embeddings)
 
 
 class MaskedAttentionBlock(nn.Module):
@@ -133,14 +162,15 @@ class CrossAttentionBlock(nn.Module):
 
         assert word_emb_dim % num_heads == 0
         assert img_emb_dim % num_heads == 0
-        self.word_head_dim = int(word_emb_dim // num_heads)
-        self.img_head_dim = int(img_emb_dim // num_heads)
         self.num_heads = int(num_heads)
+        # self.combined_dim = max(self.word_emb_dim, self.img_emb_dim)
+        self.combined_dim = self.word_emb_dim
+        self.head_dim = int(self.combined_dim // num_heads)
 
-        self.concat_proj = nn.Linear(word_emb_dim, word_emb_dim)
-        self.M_q = nn.Linear(word_emb_dim, self.word_emb_dim)
-        self.M_k = nn.Linear(img_emb_dim, self.word_emb_dim)
-        self.M_v = nn.Linear(img_emb_dim, self.word_emb_dim)
+        self.concat_proj = nn.Linear(self.combined_dim, self.combined_dim)
+        self.M_q = nn.Linear(word_emb_dim, self.combined_dim)
+        self.M_k = nn.Linear(img_emb_dim, self.combined_dim)
+        self.M_v = nn.Linear(img_emb_dim, self.combined_dim)
         self.attn_dropout = nn.Dropout(dropout)
         self.norm = nn.LayerNorm(word_emb_dim)
 
@@ -148,14 +178,12 @@ class CrossAttentionBlock(nn.Module):
         batch_size, seq_len, _ = word_emb.size()
         _, num_patches, _ = img_emb.size()
 
-        Qs = self.M_q(word_emb).view(
-            batch_size, seq_len, self.num_heads, self.word_head_dim
-        )
+        Qs = self.M_q(word_emb).view(batch_size, seq_len, self.num_heads, self.head_dim)
         Qs = Qs.permute(0, 2, 1, 3)
         # [batch_size, seq_len, num_heads, word_head_dim]
 
         Ks = self.M_k(img_emb).view(
-            batch_size, num_patches, self.num_heads, self.img_head_dim
+            batch_size, num_patches, self.num_heads, self.head_dim
         )
         Ks = Ks.permute(0, 2, 1, 3)
         # [batch_size, seq_len, num_heads, img_head_dim]
@@ -167,7 +195,7 @@ class CrossAttentionBlock(nn.Module):
         # [batch_size, seq_len, seq_len]
 
         Vs = self.M_v(img_emb).view(
-            batch_size, num_patches, self.num_heads, self.img_head_dim
+            batch_size, num_patches, self.num_heads, self.head_dim
         )
         Vs = Vs.permute(0, 2, 1, 3)
         # [batch_size, seq_len, num_heads, img_head_dim]
@@ -175,7 +203,7 @@ class CrossAttentionBlock(nn.Module):
         attn_emb = As @ Vs
         # [batch_size, seq_len, embedding_dim]
 
-        attn_emb = attn_emb.view(batch_size, seq_len, self.word_emb_dim)
+        attn_emb = attn_emb.view(batch_size, seq_len, self.combined_dim)
         attn_emb = self.concat_proj(attn_emb)
 
         attn_emb = self.attn_dropout(attn_emb)

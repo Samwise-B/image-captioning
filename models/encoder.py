@@ -31,8 +31,8 @@ class Encoder(nn.Module):
             ]
         )
 
-    def forward(self, tokens: torch.LongTensor):
-        embeddings = self.embedding(tokens)
+    def forward(self, patches: torch.LongTensor):
+        embeddings = self.embedding(patches)
         embeddings = self.embed_pos(embeddings)
         # batch_size, seq_len, embedding_dim
         for layer in self.attn_block:
@@ -73,9 +73,9 @@ class EncoderAttentionBlock(nn.Module):
         )
         self.norm = nn.LayerNorm(embedding_dim)
 
-    def forward(self, word_emb: torch.Tensor):
-        batch_size, seq_len, _ = word_emb.size()
-        qkv = self.qkv_combined(word_emb)
+    def forward(self, img_emb: torch.Tensor):
+        batch_size, seq_len, _ = img_emb.size()
+        qkv = self.qkv_combined(img_emb)
         qkv = qkv.view(batch_size, seq_len, 3, self.num_heads, self.head_dim)
         qkv = qkv.permute(0, 2, 3, 1, 4)
         Qs, Ks, Vs = qkv.unbind(dim=1)
@@ -98,7 +98,7 @@ class EncoderAttentionBlock(nn.Module):
         attn_emb = self.attn_dropout(attn_emb)
 
         if self.add_norm:
-            attn_emb = self.norm(attn_emb + word_emb)
+            attn_emb = self.norm(attn_emb + img_emb)
 
         # [batch_size, seq_len, embedding_dim]
         return self.ff(attn_emb)
