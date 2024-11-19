@@ -28,11 +28,11 @@ transform = torchvision.transforms.Compose(
 train_dataset = Flickr("train", num_rows=128)
 # Create DataLoader with the custom collate function
 train_loader = DataLoader(
-    train_dataset, batch_size=128, shuffle=True, collate_fn=Flickr.collate_fn
+    train_dataset, batch_size=64, shuffle=True, collate_fn=Flickr.collate_fn
 )
 
 val_dataset = Flickr("val", num_rows=128)
-val_loader = DataLoader(val_dataset, batch_size=128, collate_fn=val_dataset.collate_fn)
+val_loader = DataLoader(val_dataset, batch_size=64, collate_fn=Flickr.collate_fn)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Available device is {device}")
@@ -91,8 +91,8 @@ for epoch in range(100):
         running_accuracy.append(accuracy)
 
         if (i + 1) % 5000 == 0:
-            torch.save(model.state_dict(), model_dir / f"{model_name}-e{epoch}-{i}")
-            wandb.save(model_dir / f"{model_name}-e{epoch}-{i}")
+            torch.save(model.state_dict(), model_dir / f"{model_name}-e{epoch}-{i}.pt")
+            wandb.save(model_dir / f"{model_name}-e{epoch}-{i}.pt", base_path="weights")
 
     val_loss = []
     val_accuracy = []
@@ -131,3 +131,7 @@ for epoch in range(100):
     running_accuracy = []
     val_loss = []
     val_accuracy = []
+
+torch.save(model.state_dict(), model_dir / f"{model_name}-e{epoch}-{i}.pt")
+wandb.save(model_dir / f"{model_name}-e{epoch}-{i}.pt", base_path="weights")
+wandb.finish()
