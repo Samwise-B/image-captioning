@@ -12,6 +12,8 @@ sys.path.append(str(repo_dir))
 from sets.flickr import Flickr
 from models.combined import DoubleTrouble
 
+torch.manual_seed(42)
+
 transform = torchvision.transforms.Compose(
     [
         torchvision.transforms.Resize(
@@ -22,22 +24,22 @@ transform = torchvision.transforms.Compose(
     ]
 )
 
-train_dataset = Flickr("train", num_rows=2, transform=transform)
+train_dataset = Flickr("train", num_rows=100, transform=transform)
 # Create DataLoader with the custom collate function
 train_loader = DataLoader(
-    train_dataset, batch_size=2, shuffle=True, collate_fn=Flickr.collate_fn
+    train_dataset, batch_size=50, shuffle=True, collate_fn=Flickr.collate_fn
 )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Available device is {device}")
-
+patch_size = (16**2) * 3
 model = DoubleTrouble(
     vocab_size=train_dataset.vocab_size,
-    patch_size=16**2,
+    patch_size=patch_size,
     word_embed_dim=train_dataset.vocab_size // 8 + 1,
-    img_embed_dim=(16**2) // 8,
+    img_embed_dim=patch_size,
     ff_dim_decoder=2 * (train_dataset.vocab_size // 8),
-    num_patches=768,
+    num_patches=196,
     num_layers_encoder=1,
     num_layers_decoder=1,
     num_heads_encoder=1,
@@ -54,7 +56,7 @@ print(
 optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
 criterion = torch.nn.CrossEntropyLoss()
 
-wandb.init(project="encoder-decoder", name="flickr-multi-head")
+wandb.init(project="image-captioning", name="flickr-vit-100rows")
 running_loss = []
 running_accuracy = []
 for _ in range(1000):
@@ -69,7 +71,7 @@ for _ in range(1000):
         pred = model(tokens, patches)
         pred = torch.cat([x[: cap_lens[i]] for i, x in enumerate(pred)], dim=0)
 
-        loss = criterion(pred.view(-1, pred.size(-1)), target.view(-1))
+        loss = criterion(pred, target)
         loss.backward()
         optimizer.step()
         running_loss.append(loss.item())
@@ -80,7 +82,7 @@ for _ in range(1000):
             .item()
         )  # Count correct predictions
         total = target.view(-1).size(0)  # Total number of predictions
-        accuracy = correct / total * 100
+        accuracy = correct / total
         running_accuracy.append(accuracy)
 
         # print("", end="\r")
@@ -88,8 +90,8 @@ for _ in range(1000):
         # if (i+1) % 100 == 0:
         wandb.log(
             {
-                "loss-100": sum(running_loss) / 100,
-                "accuracy-100": sum(running_accuracy) / 100,
+                "loss-100": sum(running_loss),
+                "accuracy-100": sum(running_accuracy),
             }
         )
         running_loss = []

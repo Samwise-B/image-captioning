@@ -24,6 +24,9 @@ class Flickr(torch.utils.data.Dataset):
         self.tokeniser = spm.SentencePieceProcessor(model_file=str(path_to_tokeniser))
         self.vocab_size = self.tokeniser.get_piece_size()
         self.split = split
+        self.preprocessing = (
+            torchvision.models.ViT_B_16_Weights.IMAGENET1K_V1.transforms()
+        )
         if os.path.exists(path_to_split_ind):
             with open(path_to_split_ind, "rb") as f:
                 split_to_indices = pickle.load(f)
@@ -47,12 +50,13 @@ class Flickr(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         img = self.ds["test"][self.split_indices[idx]]["image"]
-        if self.transform:
-            img = self.transform(img)
+        # if self.transform:
+        #     img = self.transform(img)
+        patches = self.preprocessing(img).unsqueeze(0)
         captions = self.ds["test"][self.split_indices[idx]]["caption"]
         caption = captions[0]
 
-        patches = self.get_patches(img)
+        # patches = self.get_patches(img)
         caption_tokens = self.encode_label(caption)
         targ = caption_tokens[1:]
         inpt = caption_tokens[:-1].clone().detach()
@@ -68,9 +72,7 @@ class Flickr(torch.utils.data.Dataset):
         padded_inpts = torch.nn.utils.rnn.pad_sequence(
             tokens, batch_first=True, padding_value=0
         )
-        # padded_targets = torch.nn.utils.rnn.pad_sequence(
-        #     targets, batch_first=True, padding_value=0
-        # )
+
         # Concatenate images and labels
         targets = torch.cat(targets, dim=0)
         images = torch.cat(patches, dim=0)
