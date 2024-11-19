@@ -24,10 +24,10 @@ transform = torchvision.transforms.Compose(
     ]
 )
 
-train_dataset = Flickr("train", num_rows=100, transform=transform)
+train_dataset = Flickr("train", num_rows=-1, transform=transform)
 # Create DataLoader with the custom collate function
 train_loader = DataLoader(
-    train_dataset, batch_size=50, shuffle=True, collate_fn=Flickr.collate_fn
+    train_dataset, batch_size=128, shuffle=True, collate_fn=Flickr.collate_fn
 )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
