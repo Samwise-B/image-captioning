@@ -54,7 +54,7 @@ class Flickr(torch.utils.data.Dataset):
         #     img = self.transform(img)
         patches = self.preprocessing(img).unsqueeze(0)
         captions = self.ds["test"][self.split_indices[idx]]["caption"]
-        caption = captions[0]
+        caption = random.choice(captions)
 
         # patches = self.get_patches(img)
         caption_tokens = self.encode_label(caption)

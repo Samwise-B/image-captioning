@@ -13,6 +13,7 @@ from sets.flickr import Flickr
 from models.combined import DoubleTrouble
 
 torch.manual_seed(42)
+model_dir = repo_dir / "weights/"
 
 transform = torchvision.transforms.Compose(
     [
@@ -24,29 +25,34 @@ transform = torchvision.transforms.Compose(
     ]
 )
 
-train_dataset = Flickr("train", num_rows=-1, transform=transform)
+train_dataset = Flickr("train", num_rows=128)
 # Create DataLoader with the custom collate function
 train_loader = DataLoader(
     train_dataset, batch_size=128, shuffle=True, collate_fn=Flickr.collate_fn
 )
 
+val_dataset = Flickr("val", num_rows=128)
+val_loader = DataLoader(val_dataset, batch_size=128, collate_fn=val_dataset.collate_fn)
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Available device is {device}")
-patch_size = (16**2) * 3
-model = DoubleTrouble(
-    vocab_size=train_dataset.vocab_size,
-    patch_size=patch_size,
-    word_embed_dim=train_dataset.vocab_size // 8 + 1,
-    img_embed_dim=patch_size,
-    ff_dim_decoder=2 * (train_dataset.vocab_size // 8),
-    num_patches=196,
-    num_layers_encoder=1,
-    num_layers_decoder=1,
-    num_heads_encoder=1,
-    num_heads_decoder=1,
-    ff_dim_encoder=2 * (train_dataset.vocab_size // 8),
-)
 
+patch_size = (16**2) * 3
+args = {
+    "vocab_size": train_dataset.vocab_size,
+    "patch_size": patch_size,
+    "word_embed_dim": train_dataset.vocab_size // 8 + 1,
+    "img_embed_dim": patch_size,
+    "ff_dim_decoder": 2 * (train_dataset.vocab_size // 8),
+    "num_patches": 196,
+    "num_layers_encoder": 1,
+    "num_layers_decoder": 1,
+    "num_heads_encoder": 1,
+    "num_heads_decoder": 1,
+    "ff_dim_encoder": 2 * (train_dataset.vocab_size // 8),
+}
+
+model = DoubleTrouble(**args)
 model.to(device)
 
 print(
@@ -56,10 +62,11 @@ print(
 optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
 criterion = torch.nn.CrossEntropyLoss()
 
-wandb.init(project="image-captioning", name="flickr-vit-100rows")
+model_name = "flickr-vit-100rows"
+wandb.init(project="image-captioning", name=model_name, config=args)
 running_loss = []
 running_accuracy = []
-for _ in range(1000):
+for epoch in range(100):
     for i, (patches, tokens, target, cap_lens) in enumerate(
         tqdm(train_loader, desc="Training")
     ):
@@ -77,22 +84,50 @@ for _ in range(1000):
         running_loss.append(loss.item())
 
         correct = (
-            (torch.argmax(pred.view(-1, pred.size(-1)), dim=1) == target.view(-1))
-            .sum()
-            .item()
+            (torch.argmax(pred, dim=1) == target).sum().item()
         )  # Count correct predictions
-        total = target.view(-1).size(0)  # Total number of predictions
+        total = target.size(0)  # Total number of predictions
         accuracy = correct / total
         running_accuracy.append(accuracy)
 
-        # print("", end="\r")
-        # print(f"loss: {sum(running_loss) / 100}", end="\r")
-        # if (i+1) % 100 == 0:
-        wandb.log(
-            {
-                "loss-100": sum(running_loss),
-                "accuracy-100": sum(running_accuracy),
-            }
-        )
-        running_loss = []
-        running_accuracy = []
+        if (i + 1) % 5000 == 0:
+            torch.save(model.state_dict(), model_dir / f"{model_name}-e{epoch}-{i}")
+            wandb.save(model_dir / f"{model_name}-e{epoch}-{i}")
+
+    val_loss = []
+    val_accuracy = []
+    # evaluation
+    with torch.inference_mode():
+        for i, (patches, tokens, target, cap_lens) in enumerate(
+            tqdm(val_loader, desc="Validation")
+        ):
+            patches = patches.to(device)
+            tokens = tokens.to(device)
+            target = target.to(device)
+
+            pred = model(tokens, patches)
+            pred = torch.cat([x[: cap_lens[i]] for i, x in enumerate(pred)], dim=0)
+
+            loss = criterion(pred, target)
+            val_loss.append(loss.item())
+
+            correct = (
+                (torch.argmax(pred, dim=1) == target).sum().item()
+            )  # Count correct predictions
+            total = target.size(0)  # Total number of predictions
+            accuracy = correct / total
+            val_accuracy.append(accuracy)
+
+    # log data
+    wandb.log(
+        {
+            "loss": sum(running_loss) / train_dataset.__len__(),
+            "precision": sum(running_accuracy) / train_dataset.__len__(),
+            "val-loss": sum(val_loss) / val_dataset.__len__(),
+            "val-precision": sum(val_accuracy) / val_dataset.__len__(),
+        }
+    )
+    running_loss = []
+    running_accuracy = []
+    val_loss = []
+    val_accuracy = []
