@@ -3,6 +3,7 @@ FLICKR/
 wandb/
 utils/tokenizer.*
 ssh-key
+weights
 
 
 # Byte-compiled / optimized / DLL files
