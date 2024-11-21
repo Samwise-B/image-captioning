@@ -5,28 +5,29 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader, random_split
 import torch
 import torchvision
+import random
+import logging
+
 
 repo_dir = Path(__file__).parent.parent
 sys.path.append(str(repo_dir))
 
 from sets.flickr import Flickr
 from models.gpt_transformer import DoubleTrouble
+from training.inference import run_inference
 
 torch.manual_seed(42)
 model_dir = repo_dir / "weights/"
 
-# transform = torchvision.transforms.Compose(
-#     [
-#         torchvision.transforms.Resize(
-#             256
-#         ),  # Resize shorter side to 256 and keep aspect ratio
-#         torchvision.transforms.CenterCrop(256),  # Optionally crop the center to 256x256
-#         torchvision.transforms.ToTensor(),
-#     ]
-# )
+logging.basicConfig(
+    filename="training.log",  # File to log to
+    filemode="w",  # Overwrite file each time; use "a" to append
+    level=logging.INFO,  # Log level
+    format="%(asctime)s - %(levelname)s - %(message)s",  # Log format
+)
 
-batch_size = 2
-subset_size = 2
+batch_size = 10
+subset_size = 10
 train_dataset = Flickr("train", num_rows=subset_size)
 # Create DataLoader with the custom collate function
 train_loader = DataLoader(
@@ -72,10 +73,11 @@ num_epochs = 100
 # args["batch_size"] = batch_size
 # args["subset_size"] = subset_size
 wandb.init(project="image-captioning", name=model_name)
+
 running_loss = []
 running_accuracy = []
 for epoch in range(num_epochs):
-    for i, (patches, tokens, target, cap_lens) in enumerate(
+    for i, (patches, tokens, target, cap_lens, _) in enumerate(
         tqdm(train_loader, desc=f"Training {epoch}")
     ):
         patches = patches.to(device)
@@ -98,47 +100,54 @@ for epoch in range(num_epochs):
         accuracy = correct / total
         running_accuracy.append(accuracy)
 
-        if (i + 1) % 5000 == 0:
-            torch.save(model.state_dict(), model_dir / f"{model_name}-e{epoch}-{i}.pt")
-            wandb.save(model_dir / f"{model_name}-e{epoch}-{i}.pt", base_path="weights")
+        # if (i + 1) % (train_dataset.__len__() / 10) == 0:
+        if (i + 1) % 1 == 0:
+            torch.save(model.state_dict(), model_dir / f"{model_name}-e{epoch % 3}.pt")
+            # wandb.save(model_dir / f"{model_name}-e{epoch}-{i}.pt", base_path="weights")
 
-    val_loss = []
-    val_accuracy = []
-    # evaluation
-    with torch.inference_mode():
-        for i, (patches, tokens, target, cap_lens) in enumerate(
-            tqdm(val_loader, desc="Validation")
-        ):
-            patches = patches.to(device)
-            tokens = tokens.to(device)
-            target = target.to(device)
+            for step in range(5):
+                o, t, i = run_inference(model, train_loader.dataset, step)
+                logging.info(f"\nPrediction: {o}. \nGround Truth: {t}")
 
-            pred = model(tokens, patches)
-            pred = torch.cat([x[: cap_lens[i]] for i, x in enumerate(pred)], dim=0)
+            val_loss = []
+            val_accuracy = []
+            # evaluation
+            with torch.inference_mode():
+                for i, (patches, tokens, target, cap_lens, _) in enumerate(
+                    tqdm(val_loader, desc="Validation")
+                ):
+                    patches = patches.to(device)
+                    tokens = tokens.to(device)
+                    target = target.to(device)
 
-            loss = criterion(pred, target)
-            val_loss.append(loss.item())
+                    pred = model(tokens, patches)
+                    pred = torch.cat(
+                        [x[: cap_lens[i]] for i, x in enumerate(pred)], dim=0
+                    )
 
-            correct = (
-                (torch.argmax(pred, dim=1) == target).sum().item()
-            )  # Count correct predictions
-            total = target.size(0)  # Total number of predictions
-            accuracy = correct / total
-            val_accuracy.append(accuracy)
+                    loss = criterion(pred, target)
+                    val_loss.append(loss.item())
 
-    # log data
-    wandb.log(
-        {
-            "loss": sum(running_loss) / len(train_loader),
-            "precision": sum(running_accuracy) / len(train_loader),
-            "val-loss": sum(val_loss) / len(val_loader),
-            "val-precision": sum(val_accuracy) / len(val_loader),
-        }
-    )
-    running_loss = []
-    running_accuracy = []
-    val_loss = []
-    val_accuracy = []
+                    correct = (
+                        (torch.argmax(pred, dim=1) == target).sum().item()
+                    )  # Count correct predictions
+                    total = target.size(0)  # Total number of predictions
+                    accuracy = correct / total
+                    val_accuracy.append(accuracy)
+
+            # log data
+            wandb.log(
+                {
+                    "loss": sum(running_loss) / len(running_loss),
+                    "precision": sum(running_accuracy) / len(running_accuracy),
+                    "val-loss": sum(val_loss) / len(val_loss),
+                    "val-precision": sum(val_accuracy) / len(val_accuracy),
+                }
+            )
+            running_loss = []
+            running_accuracy = []
+            val_loss = []
+            val_accuracy = []
 
 torch.save(model.state_dict(), model_dir / f"{model_name}-final.pt")
 wandb.save(model_dir / f"{model_name}-final.pt", base_path="weights")

@@ -42,12 +42,15 @@ class Decoder(nn.Module):
         # self.positional = self.gpt.wpe
         self.projection = nn.Linear(word_embed_dim, self.new_vocab_size)
 
-        self.ff = nn.Sequential(
-            nn.Linear(word_embed_dim, ff_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(ff_dim, word_embed_dim),
-            nn.Dropout(dropout),
+        self.ffs = nn.ModuleList(
+            nn.Sequential(
+                nn.Linear(word_embed_dim, ff_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(ff_dim, word_embed_dim),
+                nn.Dropout(dropout),
+            )
+            for _ in range(num_layers)
         )
 
         self.norm = nn.LayerNorm(word_embed_dim)
@@ -62,7 +65,7 @@ class Decoder(nn.Module):
         for i in range(self.num_layers):
             masked_emb, _ = self.masked_attn_layers[i](out_emb)
             cross_emb = self.cross_attn_layers[i](masked_emb, img_emb)
-            out_emb = self.ff(cross_emb)
+            out_emb = self.ffs[i](cross_emb)
 
         out_emb = self.norm(out_emb + word_emb)
 
