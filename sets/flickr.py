@@ -58,11 +58,10 @@ class Flickr(torch.utils.data.Dataset):
             patches,
             inpt,
             targ,
-            img,
         )
 
     def collate_fn(batch):
-        patches, tokens, targets, imgs = zip(*batch)
+        patches, tokens, targets = zip(*batch)
         cap_lens = [len(string) for string in tokens]
         padded_inpts = torch.nn.utils.rnn.pad_sequence(
             tokens, batch_first=True, padding_value=0
@@ -73,7 +72,7 @@ class Flickr(torch.utils.data.Dataset):
         images = torch.cat(patches, dim=0)
         # unchanged_images = torch.cat(imgs, dim=0)
 
-        return images, padded_inpts, targets, cap_lens, imgs
+        return images, padded_inpts, targets, cap_lens
 
     def encode_label(self, label):
         return torch.LongTensor(

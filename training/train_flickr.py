@@ -26,8 +26,8 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",  # Log format
 )
 
-batch_size = 10
-subset_size = 10
+batch_size = 64
+subset_size = -1
 train_dataset = Flickr("train", num_rows=subset_size)
 # Create DataLoader with the custom collate function
 train_loader = DataLoader(
@@ -67,7 +67,7 @@ print(
 optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
 criterion = torch.nn.CrossEntropyLoss()
 
-model_name = "flickr-vit-gpt"
+model_name = "flickr-vit-gpt-full"
 num_epochs = 100
 # args["num_epochs"] = num_epochs
 # args["batch_size"] = batch_size
@@ -77,7 +77,7 @@ wandb.init(project="image-captioning", name=model_name)
 running_loss = []
 running_accuracy = []
 for epoch in range(num_epochs):
-    for i, (patches, tokens, target, cap_lens, _) in enumerate(
+    for i, (patches, tokens, target, cap_lens) in enumerate(
         tqdm(train_loader, desc=f"Training {epoch}")
     ):
         patches = patches.to(device)
@@ -101,7 +101,7 @@ for epoch in range(num_epochs):
         running_accuracy.append(accuracy)
 
         # if (i + 1) % (train_dataset.__len__() / 10) == 0:
-        if (i + 1) % 1 == 0:
+        if (i + 1) % 100 == 0:
             torch.save(model.state_dict(), model_dir / f"{model_name}-e{epoch % 3}.pt")
             # wandb.save(model_dir / f"{model_name}-e{epoch}-{i}.pt", base_path="weights")
 
@@ -113,7 +113,7 @@ for epoch in range(num_epochs):
             val_accuracy = []
             # evaluation
             with torch.inference_mode():
-                for i, (patches, tokens, target, cap_lens, _) in enumerate(
+                for i, (patches, tokens, target, cap_lens) in enumerate(
                     tqdm(val_loader, desc="Validation")
                 ):
                     patches = patches.to(device)

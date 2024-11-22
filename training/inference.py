@@ -12,6 +12,8 @@ sys.path.append(str(repo_dir))
 
 from models.gpt_transformer import DoubleTrouble
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 def run_inference(model, ds, i):
     tokeniser = ds.tokeniser
@@ -20,9 +22,10 @@ def run_inference(model, ds, i):
 
     with torch.inference_mode():
         # idx = random.randint(0, ds.__len__())
-        patches, _, target, img = ds[i]
+        patches, _, target = ds[i]
+        patches = patches.to(device)
         inpt_text = ""
-        inpt = torch.tensor([bos_token]).unsqueeze(0)
+        inpt = torch.tensor([bos_token], device=device).unsqueeze(0)
         while inpt.shape[-1] <= target.shape[-1] and inpt[0, -1] != eos_token:
             next_pred = model(inpt, patches)
             next_tokens = torch.argmax(next_pred, dim=-1)
