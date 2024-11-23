@@ -192,6 +192,6 @@ class OwnMultiHeadTransformer(nn.Module):
 
 if __name__ == "__main__":
     magic_layer = nn.Linear(768, 768)
-    bert = BERP(magic_layer, 30522, 768)
+    bert = BERT(magic_layer, 30522, 768)
     tokens = torch.randint(0, 30522, (10,))
     print(bert(tokens))

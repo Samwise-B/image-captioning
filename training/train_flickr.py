@@ -26,7 +26,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",  # Log format
 )
 
-batch_size = 64
+batch_size = 48
 subset_size = -1
 train_dataset = Flickr("train", num_rows=subset_size)
 # Create DataLoader with the custom collate function
@@ -101,12 +101,12 @@ for epoch in range(num_epochs):
         running_accuracy.append(accuracy)
 
         # if (i + 1) % (train_dataset.__len__() / 10) == 0:
-        if (i + 1) % 100 == 0:
-            torch.save(model.state_dict(), model_dir / f"{model_name}-e{epoch % 3}.pt")
-            # wandb.save(model_dir / f"{model_name}-e{epoch}-{i}.pt", base_path="weights")
+        if (i + 1) % 500 == 0:
+            torch.save(model.state_dict(), model_dir / f"{model_name}-{i % 5}.pt")
+            wandb.save(model_dir / f"{model_name}-{i % 5}.pt", base_path="weights")
 
             for step in range(5):
-                o, t, i = run_inference(model, train_loader.dataset, step)
+                o, t = run_inference(model, train_loader.dataset, step)
                 logging.info(f"\nPrediction: {o}. \nGround Truth: {t}")
 
             val_loss = []
