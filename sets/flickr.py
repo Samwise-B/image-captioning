@@ -17,18 +17,22 @@ path_to_tokeniser = Path(__file__).parent.parent / "utils/tokenizer.model"
 
 class Flickr(torch.utils.data.Dataset):
     def __init__(
-        self, split: str, num_rows: int, window_size: int = 16, transform=None
+        self, split: str, num_rows: int, window_size: int = 16, gpt: bool = False, transform=None
     ):
         super().__init__()
         self.window_size = window_size
+        self.gpt = gpt
         self.ds = load_dataset("nlphuji/flickr30k")
         self.ds = self.ds["test"].filter(lambda row: row["split"] == split)
-        # self.tokeniser = spm.SentencePieceProcessor(model_file=str(path_to_tokeniser))
-        self.tokeniser = GPT2Tokenizer.from_pretrained("gpt2")
-        self.tokeniser.add_special_tokens(
-            {"bos_token": "<s>", "eos_token": "</s>", "pad_token": "<pad>"}
-        )
-        self.vocab_size = self.tokeniser.vocab_size
+        self.tokeniser = spm.SentencePieceProcessor(model_file=str(path_to_tokeniser))
+        if gpt:
+            self.tokeniser = GPT2Tokenizer.from_pretrained("gpt2")
+            self.tokeniser.add_special_tokens(
+                {"bos_token": "<s>", "eos_token": "</s>", "pad_token": "<pad>"}
+            )
+            self.vocab_size = self.tokeniser.vocab_size
+        else:
+            self.vocab_size = self.tokeniser.vocab_size()
         self.split = split
         self.preprocessing = (
             torchvision.models.ViT_B_16_Weights.IMAGENET1K_V1.transforms()
@@ -75,11 +79,18 @@ class Flickr(torch.utils.data.Dataset):
         return images, padded_inpts, targets, cap_lens
 
     def encode_label(self, label):
-        return torch.LongTensor(
-            [self.tokeniser.bos_token_id]
-            + self.tokeniser.encode(label)
-            + [self.tokeniser.eos_token_id]
-        )
+        if self.gpt:
+            return torch.LongTensor(
+                [self.tokeniser.bos_token_id]
+                + self.tokeniser.encode(label)
+                + [self.tokeniser.eos_token_id]
+            )
+        else:
+            return torch.LongTensor(
+                [self.tokeniser.bos_id()]
+                + self.tokeniser.encode(label)
+                + [self.tokeniser.eos_id()]
+            )
 
     def get_patches(self, img: torch.Tensor):
         img = img.unsqueeze(0)

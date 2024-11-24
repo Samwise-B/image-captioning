@@ -10,7 +10,7 @@ from models.vit import ViT
 from models.decoder import Decoder
 
 
-class DoubleTrouble(torch.nn.Module):
+class Transformer(torch.nn.Module):
     def __init__(
         self,
         vocab_size: int,

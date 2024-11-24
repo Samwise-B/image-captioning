@@ -10,7 +10,7 @@ repo_dir = Path(__file__).parent.parent
 sys.path.append(str(repo_dir))
 
 from sets.mnist import Combine
-from models.combined import DoubleTrouble
+from models.transformer import DoubleTrouble
 
 full_dataset = torchvision.datasets.MNIST(root=".", download=True)
 train_size = int(0.8 * len(full_dataset))
