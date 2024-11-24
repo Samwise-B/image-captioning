@@ -108,7 +108,7 @@ def main():
             # if (i + 1) % (train_dataset.__len__() / 10) == 0:
             if (i + 1) % 1 == 0:
                 torch.save(model.state_dict(), model_dir / f"{model_name}-{save_counter % 5}.pt")
-                #wandb.save(str(model_dir / f"{model_name}-{save_counter % 5}.pt"), base_path=str(model_dir))
+                wandb.save(str(model_dir / f"{model_name}-{save_counter % 5}.pt"), base_path=str(model_dir))
                 save_counter += 1
 
                 for step in range(5):
