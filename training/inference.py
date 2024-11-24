@@ -18,8 +18,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def run_inference(model, ds, i, temperature=1):
     tokeniser = ds.tokeniser
-    bos_token = tokeniser.bos_token_id
-    eos_token = tokeniser.eos_token_id
+    if ds.gpt:
+        bos_token = tokeniser.bos_token_id
+        eos_token = tokeniser.eos_token_id
+    else:
+        bos_token = tokeniser.bos_id()
+        eos_token = tokeniser.eos_id()
 
     with torch.inference_mode():
         # idx = random.randint(0, ds.__len__())
@@ -38,10 +42,12 @@ def run_inference(model, ds, i, temperature=1):
 
         # print(f"Target: {tokeniser.decode(target, skip_special_tokens=True)}")
         # print(f"Prediction: {tokeniser.decode(inpt.squeeze(), skip_special_tokens=True)}")
-
-        return tokeniser.decode(
-            inpt.squeeze(), skip_special_tokens=True
-        ), tokeniser.decode(target, skip_special_tokens=True)
+        if ds.gpt:
+            return tokeniser.decode(
+                inpt.squeeze(), skip_special_tokens=True
+            ), tokeniser.decode(target, skip_special_tokens=True)
+        else:
+            return tokeniser.decode(inpt.squeeze().tolist()), tokeniser.decode(target.tolist())
 
 
 if __name__ == "__main__":

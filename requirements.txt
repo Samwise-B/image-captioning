@@ -5,3 +5,5 @@ torchvision
 datasets
 sentencepiece
 transformers
+nltk
+rouge_score

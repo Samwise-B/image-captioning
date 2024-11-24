@@ -24,7 +24,6 @@ class Flickr(torch.utils.data.Dataset):
         self.gpt = gpt
         self.ds = load_dataset("nlphuji/flickr30k")
         self.ds = self.ds["test"].filter(lambda row: row["split"] == split)
-        self.tokeniser = spm.SentencePieceProcessor(model_file=str(path_to_tokeniser))
         if gpt:
             self.tokeniser = GPT2Tokenizer.from_pretrained("gpt2")
             self.tokeniser.add_special_tokens(
@@ -32,6 +31,7 @@ class Flickr(torch.utils.data.Dataset):
             )
             self.vocab_size = self.tokeniser.vocab_size
         else:
+            self.tokeniser = spm.SentencePieceProcessor(model_file=str(path_to_tokeniser))
             self.vocab_size = self.tokeniser.vocab_size()
         self.split = split
         self.preprocessing = (

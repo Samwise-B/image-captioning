@@ -49,3 +49,6 @@ class Transformer(torch.nn.Module):
         img_emb = self.encoder(patches)
         label_prediction = self.decoder(tokens, img_emb)
         return label_prediction
+    
+    def get_captions(self, pred_tokens, target_tokens, tokeniser):
+        return tokeniser.decode(pred_tokens.tolist()), tokeniser.decode(target_tokens.tolist())

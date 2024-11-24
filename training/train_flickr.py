@@ -7,6 +7,7 @@ import torch
 import torchvision
 import random
 import logging
+import nltk
 
 
 repo_dir = Path(__file__).parent.parent
@@ -16,9 +17,12 @@ from sets.flickr import Flickr
 from models.gpt_transformer import DoubleTrouble
 from models.transformer import Transformer
 from training.inference import run_inference
+from utils.metrics import compute_bleu, compute_meteor, compute_rouge
 
 torch.manual_seed(42)
 model_dir = repo_dir / "weights/"
+
+
 
 logging.basicConfig(
     filename="training.log",  # File to log to
@@ -28,8 +32,10 @@ logging.basicConfig(
 )
 
 def main():
+    nltk.download('wordnet')
+    nltk.download('omw')
 
-    batch_size = 18
+    batch_size = 24
     subset_size = -1
     train_dataset = Flickr("train", num_rows=subset_size, gpt=False)
     # Create DataLoader with the custom collate function
@@ -60,8 +66,8 @@ def main():
         "ff_dim_encoder": 4 * patch_size,
     }
 
-    model = DoubleTrouble()
-    #model = Transformer(**args)
+    #model = DoubleTrouble()
+    model = Transformer(**args)
     model.to(device)
 
     print(
@@ -81,7 +87,6 @@ def main():
 
     wandb.init(project="image-captioning", name=model_name, config=args)
     running_loss = []
-    running_accuracy = []
     for epoch in range(num_epochs):
         for i, (patches, tokens, target, cap_lens) in enumerate(
             tqdm(train_loader, desc=f"Training {epoch}")
@@ -99,15 +104,9 @@ def main():
             optimizer.step()
             running_loss.append(loss.item())
 
-            correct = (
-                (torch.argmax(pred, dim=1) == target).sum().item()
-            )  # Count correct predictions
-            total = target.size(0)  # Total number of predictions
-            accuracy = correct / total
-            running_accuracy.append(accuracy)
 
             # if (i + 1) % (train_dataset.__len__() / 10) == 0:
-            if (i + 1) % 500 == 0:
+            if (i + 1) % 1 == 0:
                 torch.save(model.state_dict(), model_dir / f"{model_name}-{save_counter % 5}.pt")
                 #wandb.save(str(model_dir / f"{model_name}-{save_counter % 5}.pt"), base_path=str(model_dir))
                 save_counter += 1
@@ -120,8 +119,7 @@ def main():
                 del patches, tokens, target, pred, loss
                 torch.cuda.empty_cache()
 
-                val_loss = []
-                val_accuracy = []
+                val_loss, bleu_scores, meteor_scores, rouge_scores = [], [], [], []
                 # evaluation
                 with torch.inference_mode():
                     for i, (patches, tokens, target, cap_lens) in enumerate(
@@ -138,27 +136,26 @@ def main():
 
                         loss = criterion(pred, target)
                         val_loss.append(loss.item())
+                        
+                        pred_tokens = torch.argmax(pred, dim=1)
+                        pred_cap, targ_cap = model.get_captions(pred_tokens, target, train_dataset.tokeniser)
 
-                        correct = (
-                            (torch.argmax(pred, dim=1) == target).sum().item()
-                        )  # Count correct predictions
-                        total = target.size(0)  # Total number of predictions
-                        accuracy = correct / total
-                        val_accuracy.append(accuracy)
+                        bleu_scores.append(compute_bleu(targ_cap, pred_cap)[3])  # BLEU-4
+                        meteor_scores.append(compute_meteor([targ_cap.split()], pred_cap.split()))
+                        rouge_scores.append(compute_rouge(targ_cap, pred_cap)['rougeL'].fmeasure)
 
                 # log data
                 wandb.log(
                     {
                         "loss": sum(running_loss) / len(running_loss),
-                        "precision": sum(running_accuracy) / len(running_accuracy),
                         "val-loss": sum(val_loss) / len(val_loss),
-                        "val-precision": sum(val_accuracy) / len(val_accuracy),
+                        "bleu_score (4gram)": sum(bleu_scores) / len(bleu_scores),
+                        "meteor_score": sum(meteor_scores) / len(meteor_scores),
+                        "rouge_scores": sum(rouge_scores) / len(rouge_scores)
                     }
                 )
                 running_loss = []
-                running_accuracy = []
                 val_loss = []
-                val_accuracy = []
 
     torch.save(model.state_dict(), model_dir / f"{model_name}-final.pt")
     wandb.save(model_dir / f"{model_name}-final.pt", base_path="weights")
